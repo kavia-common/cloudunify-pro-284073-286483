@@ -203,6 +203,10 @@ function validateAndNormalize(entity, records) {
         cost: Number.isFinite(costNum) ? costNum : 0,
         status: statusStr,
         createdAt: toISODateOrNow(obj.createdAt),
+        organizationId:
+          obj.organizationId && typeof obj.organizationId === 'string' && isUUIDv4(obj.organizationId)
+            ? obj.organizationId
+            : null,
       };
 
       if (!providerOk) {
@@ -246,6 +250,31 @@ function buildValuesPlaceholders(rows, cols) {
     parts.push(`(${placeholders.join(', ')})`);
   }
   return parts.join(', ');
+}
+
+/**
+ * Determine whether a given column exists on a table in the public schema.
+ */
+async function hasColumn(table, column) {
+  const sql = `
+    SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = $1
+        AND column_name = $2
+    ) AS exists;
+  `;
+  const result = await query(sql, [table, column]);
+  return !!(result.rows[0] && result.rows[0].exists);
+}
+
+/**
+ * Get a fallback organization id (first by created_at) if any exists.
+ */
+async function getAnyOrganizationId() {
+  const r = await query('SELECT id FROM organizations ORDER BY created_at ASC LIMIT 1', []);
+  return (r.rows[0] && r.rows[0].id) || null;
 }
 
 /**
@@ -372,32 +401,71 @@ async function upsertUsersByEmail(records) {
 
 /**
  * Upsert resources by id
+ * - If the target DB has resources.organization_id, include it in insert/update.
+ * - When organizationId is missing, fallback to the first organization in DB (if available).
  */
 async function upsertResources(records) {
-  if (!records.length) return { inserted: 0, updated: 0 };
+  if (!records.length) return { inserted: 0, updated: 0, skipped: 0 };
 
+  const hasOrgIdCol = await hasColumn('resources', 'organization_id');
   const batchSize = 100;
   let inserted = 0;
   let updated = 0;
+  let skipped = 0;
+
+  // Determine fallback org id once (if the column exists)
+  let fallbackOrgId = null;
+  if (hasOrgIdCol) {
+    fallbackOrgId = await getAnyOrganizationId();
+  }
 
   for (const batch of chunkArray(records, batchSize)) {
-    const cols = ['id', 'provider', 'type', 'name', 'tags', 'cost', 'status', 'created_at'];
-    const params = [];
-    for (const r of batch) {
-      params.push(r.id, r.provider, r.type, r.name, JSON.stringify(r.tags || {}), r.cost, r.status, r.createdAt);
+    let cols = ['id', 'provider', 'type', 'name', 'tags', 'cost', 'status', 'created_at'];
+    if (hasOrgIdCol) {
+      cols = ['id', 'organization_id', 'provider', 'type', 'name', 'tags', 'cost', 'status', 'created_at'];
     }
-    const placeholders = buildValuesPlaceholders(batch.length, cols.length);
+
+    const params = [];
+    const effectiveBatch = [];
+
+    for (const r of batch) {
+      if (hasOrgIdCol) {
+        const orgId = (r.organizationId && isUUIDv4(r.organizationId)) ? r.organizationId : fallbackOrgId;
+        if (!orgId) {
+          // Cannot insert without organization_id when schema requires it
+          skipped += 1;
+          continue;
+        }
+        params.push(r.id, orgId, r.provider, r.type, r.name, JSON.stringify(r.tags || {}), r.cost, r.status, r.createdAt);
+        effectiveBatch.push(r);
+      } else {
+        params.push(r.id, r.provider, r.type, r.name, JSON.stringify(r.tags || {}), r.cost, r.status, r.createdAt);
+        effectiveBatch.push(r);
+      }
+    }
+
+    if (!effectiveBatch.length) {
+      continue;
+    }
+
+    const placeholders = buildValuesPlaceholders(effectiveBatch.length, cols.length);
+    const setAssignments = [
+      'provider = EXCLUDED.provider',
+      'type = EXCLUDED.type',
+      'name = EXCLUDED.name',
+      'tags = EXCLUDED.tags',
+      'cost = EXCLUDED.cost',
+      'status = EXCLUDED.status',
+    ];
+    if (hasOrgIdCol) {
+      setAssignments.unshift('organization_id = EXCLUDED.organization_id');
+    }
 
     const sql = `
       INSERT INTO resources (${cols.join(', ')})
       VALUES ${placeholders}
       ON CONFLICT (id) DO UPDATE
-      SET provider = EXCLUDED.provider,
-          type = EXCLUDED.type,
-          name = EXCLUDED.name,
-          tags = EXCLUDED.tags,
-          cost = EXCLUDED.cost,
-          status = EXCLUDED.status
+      SET ${setAssignments.join(', ')}
       RETURNING (xmax = 0) AS inserted;
     `;
     const result = await query(sql, params);
@@ -406,7 +474,7 @@ async function upsertResources(records) {
     updated += result.rows.length - ins;
   }
 
-  return { inserted, updated };
+  return { inserted, updated, skipped };
 }
 
 /**
@@ -453,6 +521,7 @@ async function seedEntity(entity, bodyRecords) {
     const res = await upsertResources(valid);
     inserted += res.inserted;
     updated += res.updated;
+    skipped += res.skipped || 0;
   }
 
   // Log results

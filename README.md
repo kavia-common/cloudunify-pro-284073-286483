@@ -226,14 +226,19 @@ The Backend reads the database connection string from the environment variable `
   DATABASE_URL=postgresql://appuser:dbuser123@localhost:5000/myapp
   ```
 
-- On startup, the server:
-  - Logs a sanitized form of the connection source (username/password hidden)
-  - Applies a lightweight schema setup via `ensureSchema()`:
-    - Creates tables if missing: `organizations`, `users` (with `password_hash`), `resources`
-    - Ensures helpful indexes exist:
-      - Unique index on `users(email)` (if not already created by constraint)
-      - Index on `users(organization_id)` for faster org-scoped queries
-      - Indexes on `resources(provider)` and `resources(status)`
+Automatic fallback (no env set):
+- For local/dev convenience, if `DATABASE_URL` is not configured, the server will attempt to auto-detect and read a sibling `Database/db_connection.txt` file and extract the DSN (token starting with `postgresql://` or `postgres://`). You can also set `DB_CONNECTION_FILE` to explicitly point to the file.
+- Logs will show either "Using DATABASE_URL: ..." or "Using discrete PG* env vars ...". When fallback is used, it will appear as "Using DATABASE_URL: postgresql://***:***@...".
+- If you still prefer discrete variables (`PGHOST`, `PGPORT`, etc.), define them instead of `DATABASE_URL`.
+
+On startup, the server:
+- Logs a sanitized form of the connection source (username/password hidden)
+- Applies a lightweight schema setup via `ensureSchema()`:
+  - Creates tables if missing: `organizations`, `users` (with `password_hash`), `resources`
+  - Ensures helpful indexes exist:
+    - Unique index on `users(email)` (if not already created by constraint)
+    - Index on `users(organization_id)` for faster org-scoped queries
+    - Indexes on `resources(provider)` and `resources(status)`
 
 Optional DB environment variables:
 - `PGSSL` (default `false`) – enable SSL (`rejectUnauthorized: false`)
@@ -241,5 +246,14 @@ Optional DB environment variables:
 - `PGAPPNAME` (default `cloudunify-pro-backend`) – application_name for DB sessions
 - `PGCONNECT_TIMEOUT_MS` (default `5000`) – connection timeout
 - `PGIDLE_TIMEOUT_MS` (default `30000`) – idle timeout
+- `DB_CONNECTION_FILE` – explicit path to `db_connection.txt` if auto-detection is not desired
 
 An example `.env.example` is provided at `Backend/.env.example`. Copy it to `.env` and adjust as needed. Do not commit your `.env`.
+
+### Seeding notes and troubleshooting
+- If `POST /_internal/seed` returns 500, verify that the database is reachable:
+  - Ensure `DATABASE_URL` is set or fallback `db_connection.txt` exists and is readable by the backend.
+  - Confirm the DB is listening at the host/port specified in the DSN.
+- If your database schema requires `resources.organization_id` (as in some local DB setups), ensure your seed payload includes `"organizationId"` for each resource. The backend will also attempt to use the first organization in the DB as a fallback.
+- You can provide a body to `/_internal/seed/all` to override `.projdefn` discovery if needed.
+- Seeding is idempotent; re-running will upsert and not duplicate rows.

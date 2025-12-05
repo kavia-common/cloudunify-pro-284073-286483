@@ -1,20 +1,10 @@
 'use strict';
 
-/**
- * Simple PostgreSQL integration using node-postgres (pg) with a pooled connection.
- * - Reads connection configuration from environment variables (prefer DATABASE_URL).
- * - Exposes a reusable query method for parameterized SQL.
- * - Provides ensureSchema() which creates required tables if they do not exist.
- * - Adds startup logging (sanitized connection string) and pool error handling.
- */
-
+const fs = require('fs');
+const path = require('path');
 const { Pool } = require('pg');
 
-/**
- * Mask username/password from a database URL for safe logging.
- * @param {string} raw
- * @returns {string}
- */
+// Mask username/password from a database URL for safe logging.
 function sanitizeDatabaseUrl(raw) {
   try {
     const u = new URL(raw);
@@ -26,7 +16,110 @@ function sanitizeDatabaseUrl(raw) {
   }
 }
 
-const hasDatabaseUrl = !!process.env.DATABASE_URL;
+// Safe file read
+function readTextSafe(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      return fs.readFileSync(filePath, 'utf-8');
+    }
+  } catch (_e) {
+    // ignore
+  }
+  return null;
+}
+
+// Extract first DSN token starting with postgres:// or postgresql://
+function extractDsn(text) {
+  if (!text || typeof text !== 'string') return null;
+  let norm = '';
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (ch === '\r' || ch === '\n' || ch === '\t') {
+      norm += ' ';
+    } else {
+      norm += ch;
+    }
+  }
+  const parts = norm.split(' ').filter(Boolean);
+  for (const token of parts) {
+    const t = token.trim();
+    if (t.startsWith('postgresql://') || t.startsWith('postgres://')) {
+      return t;
+    }
+  }
+  return null;
+}
+
+// Try to locate Database/db_connection.txt in common repo locations.
+function findDbConnectionFile() {
+  const exp = process.env.DB_CONNECTION_FILE;
+  if (exp && fs.existsSync(exp)) return exp;
+
+  // Determine likely repo root by ascending
+  let root = path.resolve(__dirname);
+  for (let i = 0; i < 8; i += 1) {
+    const parent = path.dirname(root);
+    if (parent === root) break;
+    root = parent;
+  }
+
+  const repoRootCandidates = [
+    path.resolve(__dirname, '../../../..'),
+    process.cwd(),
+    root,
+  ];
+
+  for (const repoRoot of repoRootCandidates) {
+    try {
+      if (!fs.existsSync(repoRoot) || !fs.statSync(repoRoot).isDirectory()) continue;
+
+      const entries = fs.readdirSync(repoRoot, { withFileTypes: true });
+      for (const e of entries) {
+        if (!e.isDirectory()) continue;
+        const name = e.name || '';
+        if (!name.includes('cloudunify-pro')) continue;
+        const lname = name.toLowerCase();
+        if (lname.includes('backend') || lname.includes('frontend')) continue;
+        const candidate = path.join(repoRoot, name, 'Database', 'db_connection.txt');
+        if (fs.existsSync(candidate)) return candidate;
+      }
+
+      const direct = path.join(repoRoot, 'Database', 'db_connection.txt');
+      if (fs.existsSync(direct)) return direct;
+    } catch (_e) {
+      // ignore
+    }
+  }
+
+  const known = path.resolve(__dirname, '../../../..', 'cloudunify-pro-284073-286484', 'Database', 'db_connection.txt');
+  if (fs.existsSync(known)) return known;
+
+  return null;
+}
+
+// Resolve pg Pool config using env or db_connection.txt or discrete PG* env vars
+function resolvePoolConfig(basePoolOpts) {
+  const envUrl = process.env.DATABASE_URL;
+  if (envUrl) {
+    return { connectionString: envUrl, ...basePoolOpts };
+  }
+  const connFile = findDbConnectionFile();
+  if (connFile) {
+    const raw = readTextSafe(connFile);
+    const dsn = extractDsn(raw || '');
+    if (dsn) {
+      return { connectionString: dsn, ...basePoolOpts };
+    }
+  }
+  return {
+    host: process.env.PGHOST,
+    port: process.env.PGPORT ? parseInt(process.env.PGPORT, 10) : undefined,
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    database: process.env.PGDATABASE,
+    ...basePoolOpts,
+  };
+}
 
 const basePoolOpts = {
   ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : undefined,
@@ -36,28 +129,14 @@ const basePoolOpts = {
   application_name: process.env.PGAPPNAME || 'cloudunify-pro-backend',
 };
 
-const poolConfig = hasDatabaseUrl
-  ? {
-      connectionString: process.env.DATABASE_URL,
-      ...basePoolOpts,
-    }
-  : {
-    // Fallback discrete variables if DATABASE_URL is not set
-      host: process.env.PGHOST,
-      port: process.env.PGPORT ? parseInt(process.env.PGPORT, 10) : undefined,
-      user: process.env.PGUSER,
-      password: process.env.PGPASSWORD,
-      database: process.env.PGDATABASE,
-      ...basePoolOpts,
-    };
+const poolCfg = resolvePoolConfig(basePoolOpts);
+const pool = new Pool(poolCfg);
 
-const pool = new Pool(poolConfig);
-
-// Log which connection mode we are using (sanitized)
+// Log connection source (sanitized)
 try {
-  if (hasDatabaseUrl) {
+  if (poolCfg.connectionString) {
     // eslint-disable-next-line no-console
-    console.log('[db] Using DATABASE_URL:', sanitizeDatabaseUrl(process.env.DATABASE_URL));
+    console.log('[db] Using DATABASE_URL:', sanitizeDatabaseUrl(poolCfg.connectionString));
   } else {
     // eslint-disable-next-line no-console
     console.log(
@@ -68,7 +147,7 @@ try {
     );
   }
 } catch (_e) {
-  // ignore logging issues
+  // ignore
 }
 
 // Global pool error handler
@@ -77,24 +156,13 @@ pool.on('error', (err) => {
   console.error('[db] Unexpected idle client error:', err);
 });
 
-/**
- * Execute a parameterized SQL query using the shared pool.
- * @param {string} text SQL text
- * @param {any[]} [params] parameter array
- * @returns {Promise<import('pg').QueryResult>}
- */
 // PUBLIC_INTERFACE
 async function query(text, params) {
   return pool.query(text, params);
 }
 
-/**
- * Ensure required tables and indices exist.
- * This is safe to call multiple times (CREATE IF NOT EXISTS).
- */
 // PUBLIC_INTERFACE
 async function ensureSchema() {
-  // Organizations table
   await query(`
     CREATE TABLE IF NOT EXISTS organizations (
       id UUID PRIMARY KEY,
@@ -103,7 +171,6 @@ async function ensureSchema() {
     );
   `);
 
-  // Users table
   await query(`
     CREATE TABLE IF NOT EXISTS users (
       id UUID PRIMARY KEY,
@@ -116,7 +183,6 @@ async function ensureSchema() {
     );
   `);
 
-  // Ensure unique index on email (if not created by constraint above)
   await query(`
     DO $$
     BEGIN
@@ -129,16 +195,13 @@ async function ensureSchema() {
     $$;
   `);
 
-  // Add password_hash if missing (for existing databases)
   await query(`
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS password_hash TEXT NULL;
   `);
 
-  // Helpful index for frequent organization-based queries
   await query('CREATE INDEX IF NOT EXISTS idx_users_organization_id ON users(organization_id);');
 
-  // Resources table
   await query(`
     CREATE TABLE IF NOT EXISTS resources (
       id UUID PRIMARY KEY,
@@ -152,14 +215,10 @@ async function ensureSchema() {
     );
   `);
 
-  // Helpful indexes for resources (no-ops if re-run)
   await query('CREATE INDEX IF NOT EXISTS idx_resources_provider ON resources(provider);');
   await query('CREATE INDEX IF NOT EXISTS idx_resources_status ON resources(status);');
 }
 
-/**
- * Graceful shutdown helper to close the pool.
- */
 // PUBLIC_INTERFACE
 async function closePool() {
   await pool.end();
