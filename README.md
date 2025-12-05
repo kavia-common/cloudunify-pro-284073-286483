@@ -71,11 +71,12 @@ Examples:
 ## Environment Variables
 
 See `Backend/.env.example`. Key variables:
-- JWT: `JWT_SECRET`, `JWT_EXPIRES_IN`, `JWT_ISSUER`, `JWT_AUDIENCE`
+- Server: `PORT`, `HOST`, `LOG_LEVEL` (defaults to 0.0.0.0:3001 ensuring accessibility from preview)
+- Preview/Embed: `PREVIEW_MODE` (when `true`, disables X-Frame-Options and sets CSP `frame-ancestors` to `'self' https://*.cloud.kavia.ai` so Kavia preview can embed `/` and `/docs`)
 - CORS: `CORS_ORIGIN`
+- JWT: `JWT_SECRET`, `JWT_EXPIRES_IN`, `JWT_ISSUER`, `JWT_AUDIENCE`
 - DB: either `DATABASE_URL` or `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGSSL`, `PGPOOL_MAX`
 - Seeding: `SEED_ADMIN_TOKEN`, `PROJDEFN_DIR`
-- Server: `PORT`, `HOST`, `LOG_LEVEL`
 
 Do not hardcode secrets. Provide values via environment or a local `.env` file (not committed).
 

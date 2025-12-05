@@ -26,8 +26,35 @@ function parseCorsOrigins(): string | string[] {
 
 const app: Application = express();
 
-// Security headers
-app.use(helmet());
+/**
+ * Security headers
+ * In PREVIEW_MODE we allow embedding inside Kavia preview iframes by:
+ * - Disabling X-Frame-Options (frameguard)
+ * - Setting CSP frame-ancestors to 'self' and https://*.cloud.kavia.ai
+ * - Relaxing COEP/COOP to avoid issues in embedded contexts
+ */
+const previewMode: boolean = (process.env.PREVIEW_MODE || '').toLowerCase() === 'true';
+
+if (previewMode) {
+  app.use(
+    helmet({
+      // Remove X-Frame-Options header so CSP frame-ancestors controls embedding
+      frameguard: false,
+      // Only set frame-ancestors to allow Kavia preview domains to embed the app
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+          'frame-ancestors': ["'self'", 'https://*.cloud.kavia.ai'],
+        },
+      },
+      // These can interfere with embedded contexts; relax in preview only
+      crossOriginEmbedderPolicy: false,
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+    })
+  );
+} else {
+  app.use(helmet());
+}
 
 // HTTP logging
 app.use(
