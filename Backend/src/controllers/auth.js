@@ -23,6 +23,15 @@ class AuthController {
         });
       }
 
+      // If JWT is not configured, do not proceed with login to avoid issuing tokens without a secret
+      if (!process.env.JWT_SECRET || String(process.env.JWT_SECRET).trim() === '') {
+        return res.status(503).json({
+          error: 'auth_disabled',
+          message: 'Login is disabled because JWT_SECRET is not configured.',
+          code: 503,
+        });
+      }
+
       const dbUser = await getUserByEmail(email.toLowerCase());
       if (!dbUser || !dbUser.password_hash) {
         return res.status(401).json({
