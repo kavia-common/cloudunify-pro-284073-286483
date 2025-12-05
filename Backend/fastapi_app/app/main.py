@@ -3,10 +3,12 @@ CloudUnify Pro FastAPI Application.
 
 This module exposes the FastAPI app instance and configures:
 - App metadata and OpenAPI tags
-- CORS with env-driven origins (CORS_ORIGIN)
-- Preview embedding headers (PREVIEW_MODE true):
-  - CSP frame-ancestors 'self' https://*.cloud.kavia.ai
-  - COEP/COOP relaxed for embedded contexts
+- CORS with env-driven origins (CORS_ORIGIN; defaults to Frontend origin)
+- Preview embedding headers (PREVIEW_MODE):
+  - If true: CSP frame-ancestors 'self' https://*.cloud.kavia.ai; remove X-Frame-Options
+  - If false: X-Frame-Options DENY and CSP frame-ancestors 'none'
+- Global error handlers with consistent JSON shape
+- Loguru logging integration with uvicorn and redaction of Authorization headers
 
 Docs:
 - Swagger UI: /docs
@@ -24,7 +26,9 @@ from .api.v1.endpoints.organizations import router as orgs_router
 from .api.v1.endpoints.resources import router as resources_router
 from .api.v1.endpoints.seed import router as seed_router
 from .core.config import Settings
-from .core.middleware import PreviewEmbeddingHeadersMiddleware
+from .core.middleware import PreviewEmbeddingHeadersMiddleware, RequestLoggingMiddleware
+from .core.errors import register_exception_handlers
+from .core.logging import configure_logging
 
 
 def _resolve_cors_list(cors_origins: Union[str, List[str]]) -> List[str]:
@@ -44,9 +48,12 @@ def create_app() -> FastAPI:
     Create and configure the FastAPI application instance.
 
     Returns:
-        FastAPI: Configured application with CORS and preview middleware enabled as per env.
+        FastAPI: Configured application with CORS, preview middleware, and error handlers enabled as per env.
     """
     settings = Settings.load()
+
+    # Configure logging first so that subsequent imports/middlewares log via Loguru.
+    configure_logging(settings.log_level)
 
     openapi_tags = [
         {"name": "Health", "description": "Health and status endpoints"},
@@ -62,7 +69,16 @@ def create_app() -> FastAPI:
         description="FastAPI-based backend scaffold for CloudUnify Pro migration.",
         version="1.0.0",
         openapi_tags=openapi_tags,
+        docs_url="/docs",
+        redoc_url=None,
+        openapi_url="/openapi.json",
     )
+
+    # Global error handlers
+    register_exception_handlers(app)
+
+    # Request logging (Authorization header redaction)
+    app.add_middleware(RequestLoggingMiddleware, enabled=True)
 
     # CORS configuration
     app.add_middleware(

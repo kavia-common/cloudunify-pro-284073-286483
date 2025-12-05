@@ -13,16 +13,47 @@ def _parse_bool(value: Optional[str]) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _default_frontend_origin() -> List[str]:
+    """
+    Determine a sensible default Frontend origin when CORS_ORIGIN is not provided.
+
+    Priority order (first non-empty value wins):
+    - CORS_DEFAULT_FRONTEND_ORIGIN
+    - FRONTEND_ORIGIN
+    - REACT_APP_SITE_URL
+    - VITE_SITE_URL
+    - SITE_URL
+    - FRONTEND_URL
+    - WEB_APP_URL
+    Fallback: http://localhost:3000
+    """
+    candidates = [
+        os.getenv("CORS_DEFAULT_FRONTEND_ORIGIN"),
+        os.getenv("FRONTEND_ORIGIN"),
+        os.getenv("REACT_APP_SITE_URL"),
+        os.getenv("VITE_SITE_URL"),
+        os.getenv("SITE_URL"),
+        os.getenv("FRONTEND_URL"),
+        os.getenv("WEB_APP_URL"),
+    ]
+    for c in candidates:
+        if c and c.strip():
+            return [c.strip()]
+    return ["http://localhost:3000"]
+
+
 def _parse_cors_origins(raw: Optional[str]) -> Union[str, List[str]]:
     """
     Parse CORS origins from environment variable.
 
-    - If raw is "*" or empty, return "*" to signal any origin.
+    - If raw is "*" return "*" to signal any origin.
+    - If raw is empty/None, return a default list with the Frontend origin.
     - Otherwise, split by comma and trim, ignoring empty entries.
     """
-    if not raw:
-        return "*"
-    if raw.strip() == "*":
+    if raw is None or not raw.strip():
+        return _default_frontend_origin()
+    raw = raw.strip()
+    if raw == "*":
         return "*"
     return [part.strip() for part in raw.split(",") if part.strip()]
 
@@ -147,7 +178,7 @@ class Settings:
         - PORT (default: 3001)
         - LOG_LEVEL or REACT_APP_LOG_LEVEL (default: info)
         - NODE_ENV (default: development)
-        - CORS_ORIGIN (default: *)
+        - CORS_ORIGIN (default: Frontend origin; falls back to http://localhost:3000)
         - PREVIEW_MODE (default: false)
         - PREVIEW_FRAME_ANCESTORS (default: "'self' https://*.cloud.kavia.ai")
         - DATABASE_URL (preferred) or read from Database/db_connection.txt
@@ -164,7 +195,7 @@ class Settings:
         log_level = os.getenv("REACT_APP_LOG_LEVEL") or os.getenv("LOG_LEVEL", "info")
         node_env = os.getenv("NODE_ENV", "development")
 
-        cors_origins = _parse_cors_origins(os.getenv("CORS_ORIGIN", "*"))
+        cors_origins = _parse_cors_origins(os.getenv("CORS_ORIGIN"))
 
         preview_mode = _parse_bool(os.getenv("PREVIEW_MODE"))
         preview_frame_ancestors = os.getenv(

@@ -5,6 +5,7 @@ sqlalchemy==2.0.37
 asyncpg==0.29.0
 pyjwt==2.9.0
 passlib[bcrypt]==1.7.4
+loguru==0.7.2
 # Dev/quality (optional)
 black==24.10.0
 flake8==7.1.1
