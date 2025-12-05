@@ -74,6 +74,15 @@ app.use(express.json());
 // Mount routes
 app.use('/', routes);
 
+ // 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    error: 'not_found',
+    message: 'Route not found',
+    code: 404,
+  });
+});
+
 /* Error handling middleware */
 app.use((err, req, res, next) => {
   console.error(err && err.stack ? err.stack : err);

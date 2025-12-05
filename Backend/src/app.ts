@@ -102,8 +102,17 @@ app.get('/openapi.json', (req: Request, res: Response) => {
 // Parse JSON request body
 app.use(express.json());
 
-// Mount routes
+ // Mount routes
 app.use('/', routes);
+
+// Not found handler
+app.use((req: Request, res: Response) => {
+  res.status(404).json({
+    error: 'not_found',
+    message: 'Route not found',
+    code: 404,
+  });
+});
 
 // Error handling middleware
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
