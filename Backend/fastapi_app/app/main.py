@@ -75,6 +75,13 @@ def create_app() -> FastAPI:
     # Routers
     app.include_router(health_router, prefix="")
 
+    # Startup hook to ensure schema is initialized
+    from .db.init_db import ensure_schema
+
+    @app.on_event("startup")
+    async def _on_startup():
+        await ensure_schema()
+
     return app
 
 
