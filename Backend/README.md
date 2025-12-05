@@ -1,6 +1,6 @@
 # CloudUnify Pro Backend
 
-FastAPI is now the default backend for CloudUnify Pro. The legacy Express implementation has been moved into Backend/legacy_express for reference and is deprecated for new development. This document explains the new FastAPI structure, setup, environment configuration, database connection fallback, seeding endpoints, error/logging behavior, and preview embedding for Kavia. Frontend instructions remain unchanged, except that VITE_API_BASE should point to port 3001.
+FastAPI is now the default backend for CloudUnify Pro. The legacy Express implementation has been moved into Backend/legacy_express for reference and is deprecated for new development. This document explains the FastAPI structure, setup, environment configuration, database connection fallback, seeding endpoints, error/logging behavior, and preview embedding (Kavia). Frontend instructions: set VITE_API_BASE to point to this backend (port 3001).
 
 ## Overview
 
@@ -52,36 +52,110 @@ Backend/
                ├─ resources.py
                ├─ seed.py
                └─ users.py
+```
 
 # Legacy Node/Express retained for reference
 Backend/
 └─ legacy_express/   # Deprecated
+
+## Scripts and entrypoints
+
+- Backend/package.json (FastAPI default):
+  - start: python fastapi_app/serve.py
+  - dev: uvicorn app.main:app --app-dir fastapi_app --host 0.0.0.0 --port 3001 --reload
+- Preview entrypoints: use fastapi_app/serve.py or fastapi_app/run.sh
+
+## Quick Start (FastAPI)
+
+1) Create a Python virtual environment and install dependencies (Python 3.11+ recommended):
+
+Linux/macOS:
 ```
+cd Backend/fastapi_app
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Windows (PowerShell):
+```
+cd Backend/fastapi_app
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+2) Configure your environment (FastAPI reads from process env; it does NOT auto-load .env files). See the example:
+```
+cd Backend
+cp .env.example .env  # optional convenience snapshot (not auto-loaded)
+# export values to your shell / set in your process manager
+# e.g., bash:
+# set -a; source .env; set +a
+```
+
+Recommended dev settings:
+- HOST=0.0.0.0
+- PORT=3001
+- PREVIEW_MODE=true (if running inside a preview/iframe)
+- CORS_ORIGIN=http://localhost:3000 (or your Frontend URL)
+- Set JWT_SECRET to enable auth-protected routes
+- Provide DATABASE_URL or DB_CONNECTION_FILE
+
+3) Run the server:
+
+Development (auto-reload):
+```
+cd Backend/fastapi_app
+uvicorn app.main:app --host 0.0.0.0 --port 3001 --reload
+```
+
+Production-like (no reload):
+```
+cd Backend/fastapi_app
+python serve.py
+# or equivalently:
+uvicorn app.main:app --host 0.0.0.0 --port 3001
+```
+
+Convenience script:
+```
+cd Backend/fastapi_app
+bash run.sh
+```
+
+Health and docs:
+- Root health: http://localhost:3001/
+- Healthz: http://localhost:3001/healthz
+- Health: http://localhost:3001/health
+- Docs: http://localhost:3001/docs
+- OpenAPI JSON: http://localhost:3001/openapi.json
 
 ## Dependencies
 
-The application depends on the following Python packages:
-
+See fastapi_app/requirements.txt for exact versions. Core packages:
 - fastapi
-- uvicorn[standard] (recommended for uvloop/httptools on compatible platforms)
+- uvicorn[standard]
 - pydantic>=2
 - sqlalchemy>=2
 - asyncpg
 - passlib[bcrypt]
 - PyJWT
 - loguru
-- python-dotenv (optional for local workflows; note the app does not auto-load .env)
-- slowapi (optional, for rate limiting if desired)
 
-See requirements.txt for pinned versions actually used by the project. Optional libraries can be installed additionally if you need them in your environment.
+Dev/optional:
+- python-dotenv (local workflows)
+- slowapi (rate limiting)
+- black/flake8/pytest
 
 ## Environment Variables
 
-The server reads configuration solely from process environment variables. It does not automatically load a .env file.
+The server reads configuration solely from process environment variables. It does not load a .env automatically.
 
-- HOST: Interface for Uvicorn to bind. Defaults to 0.0.0.0
+Server:
+- HOST: Interface for Uvicorn bind. Defaults to 0.0.0.0
 - PORT: Port for the server. Defaults to 3001
-- LOG_LEVEL: Log level (e.g., debug, info). Defaults to info. REACT_APP_LOG_LEVEL is also honored if set
+- LOG_LEVEL: Log level (e.g., debug, info). Defaults to info. REACT_APP_LOG_LEVEL is also honored
 - NODE_ENV: Environment label (e.g., development, production). Defaults to development
 
 CORS and Preview:
@@ -105,73 +179,31 @@ Seeding:
 
 ## Database configuration and fallback
 
-The app favors DATABASE_URL. If it is missing, it attempts to extract a PostgreSQL URL from a text file, defaulting to Database/db_connection.txt (relative), or other nearby workspace candidates. When a URL is found, it is normalized to use the asyncpg driver for async SQLAlchemy:
+The app favors DATABASE_URL. If it is missing, it attempts to extract a PostgreSQL URL from a text file, defaulting to Database/db_connection.txt (relative), or other workspace candidates. When a URL is found, it is normalized to use the asyncpg driver for async SQLAlchemy:
 
 - postgresql:// → postgresql+asyncpg://
 - postgres:// → postgresql+asyncpg://
 - postgresql+psycopg2:// → postgresql+asyncpg://
 
-This makes local development easy with a simple db_connection.txt while also supporting containerized or CI environments where DATABASE_URL is provided.
+## Endpoint contract (parity with legacy)
 
-## Setup
+- POST /auth/login → { token, user }
+- GET  /users/me   → current user profile
+- GET  /users      → list users (optional ?orgId=UUID)
+- GET  /organizations → list organizations
+- GET  /resources  → list resources (optional ?provider=AWS|Azure|GCP&status=string)
 
-Create a virtual environment and install dependencies (Python 3.11+ recommended):
-
-Linux/macOS:
+All errors follow a consistent shape:
 ```
-cd Backend/fastapi_app
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-# Optional extras for local workflows:
-# pip install python-dotenv slowapi
+{
+  "error": "Unauthorized",
+  "message": "Invalid token",
+  "code": 401,
+  "details": null
+}
 ```
-
-Windows (PowerShell):
-```
-cd Backend/fastapi_app
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-# Optional extras:
-# pip install python-dotenv slowapi
-```
-
-Configure environment variables in your shell (or via your process manager). The app does not auto-load .env files.
-
-## Running the server
-
-Development (auto-reload):
-```
-cd Backend/fastapi_app
-# If using a venv, ensure it is activated
-uvicorn app.main:app --host 0.0.0.0 --port 3001 --reload
-```
-
-Production (no reload):
-```
-cd Backend/fastapi_app
-python serve.py
-# or equivalently:
-uvicorn app.main:app --host 0.0.0.0 --port 3001
-```
-
-Convenience script:
-```
-cd Backend/fastapi_app
-bash run.sh
-```
-
-Health and docs:
-- Root health: http://localhost:3001/
-- Healthz: http://localhost:3001/healthz
-- Health: http://localhost:3001/health
-- Docs: http://localhost:3001/docs
-- OpenAPI JSON: http://localhost:3001/openapi.json
 
 ## Seeding endpoints (internal)
-
-The backend includes internal endpoints to seed mock data for organizations, users, and resources. These endpoints are disabled in production unless a valid X-Seed-Token is provided.
 
 Routes:
 - POST /_internal/seed/{entity} where entity ∈ {organizations, users, resources}
@@ -200,103 +232,41 @@ Upsert rules:
 Production guard:
 - In production (NODE_ENV=production), all seeding endpoints require the header X-Seed-Token matching SEED_ADMIN_TOKEN. Otherwise, 403 is returned.
 
-Examples:
-
-Seed organizations from body:
-```
-curl -X POST http://localhost:3001/_internal/seed/organizations \
-  -H "Content-Type: application/json" \
-  -d '[{"id":"f2c4...","name":"Acme Corp"}]'
-```
-
-Seed all, discovering from .projdefn:
-```
-curl -X POST http://localhost:3001/_internal/seed
-```
-
-Seed all with explicit arrays:
-```
-curl -X POST http://localhost:3001/_internal/seed/all \
-  -H "Content-Type: application/json" \
-  -d '{
-        "organizations": [{"name":"Acme"}],
-        "users": [{"email":"admin@acme.com","name":"Admin","role":"admin","password":"secret"}],
-        "resources": [{"provider":"AWS","type":"EC2","name":"web-01","status":"running"}]
-      }'
-```
-
-Verify counts:
-```
-curl http://localhost:3001/_internal/seed/verify
-```
-
-Production (example):
-```
-curl -X POST https://api.example.com/_internal/seed/users \
-  -H "Content-Type: application/json" \
-  -H "X-Seed-Token: ${SEED_ADMIN_TOKEN}" \
-  -d '[{"email":"user@example.com","name":"User","role":"user","password":"secret"}]'
-```
-
-## Error responses
-
-All errors follow a consistent shape returned by global exception handlers:
-
-```json
-{
-  "error": "Unauthorized",
-  "message": "Invalid token",
-  "code": 401,
-  "details": null
-}
-```
-
-- 401 Unauthorized: Missing/invalid/expired token
-- 403 Forbidden: Production seeding without X-Seed-Token, or future authz failures
-- 422 ValidationError: Request validation failures (details contain validation errors)
-- 500 InternalServerError: Unhandled errors (no stack traces returned to clients)
-
-See core/errors.py and the runtime OpenAPI spec for details.
-
 ## Logging
 
-Logging is provided via Loguru and integrates uvicorn and standard logging:
-
-- Authorization headers are redacted before logging (both middleware and logger sanitization).
-- Lightweight request logging middleware logs method, path, redacted headers, and response status; bodies are not logged to minimize PII exposure.
-- LOG_LEVEL (or REACT_APP_LOG_LEVEL) controls verbosity.
-
-See core/logging.py and core/middleware.py.
+- Loguru-based logging with uvicorn integration
+- Authorization headers are redacted before logging (both middleware and logger sanitization)
+- Lightweight request logging middleware logs method, path, redacted headers, and response status; bodies are not logged
+- LOG_LEVEL (or REACT_APP_LOG_LEVEL) controls verbosity
 
 ## CORS
 
 CORS is configured via CORSMiddleware and driven by CORS_ORIGIN:
-
-- CORS_ORIGIN can be a comma-separated list of origins or "*" for any origin.
-- If not specified, the app infers a sensible default for local development (typically http://localhost:3000).
-- Credentials are disabled (allow_credentials=false) to safely support wildcard origins.
+- CORS_ORIGIN can be a comma-separated list of origins or "*" for any origin
+- If not specified, the app infers a sensible default for local development (typically http://localhost:3000)
+- Credentials disabled (allow_credentials=false) to safely support wildcard origins
 
 ## Preview embedding (Kavia)
 
 When PREVIEW_MODE=true:
-- X-Frame-Options is removed, allowing CSP to govern embedding.
-- Content-Security-Policy frame-ancestors is set from PREVIEW_FRAME_ANCESTORS (default `'self' https://*.cloud.kavia.ai`).
-- Cross-Origin-Embedder-Policy is set to unsafe-none.
-- Cross-Origin-Opener-Policy is set to same-origin-allow-popups.
-- The response includes X-Preview-Mode: true.
+- X-Frame-Options is removed, allowing CSP to govern embedding
+- Content-Security-Policy frame-ancestors is set from PREVIEW_FRAME_ANCESTORS (default `'self' https://*.cloud.kavia.ai`)
+- Cross-Origin-Embedder-Policy is set to unsafe-none; Cross-Origin-Opener-Policy to same-origin-allow-popups
+- The response includes X-Preview-Mode: true
 
 When PREVIEW_MODE=false:
-- X-Frame-Options is set to DENY and CSP uses frame-ancestors 'none'.
-- The response includes X-Preview-Mode: false.
+- X-Frame-Options=DENY and CSP frame-ancestors 'none'
+- The response includes X-Preview-Mode: false
 
 ## Frontend integration
 
-No behavioral changes are required in the frontend beyond pointing it at the new backend port:
+Set VITE_API_BASE to your backend base, for example:
+- VITE_API_BASE=http://localhost:3001
 
-- Set VITE_API_BASE to your backend base, for example:
-  - VITE_API_BASE=http://localhost:3001
-
-The frontend code already prefers VITE_API_BASE and otherwise computes a local default (same host on port 3001) for developer convenience.
+The frontend code prefers VITE_API_BASE or computes a local default (same host on port 3001). In preview environments, ensure:
+- PREVIEW_MODE=true
+- CORS_ORIGIN includes your Frontend URL (or use CORS_ORIGIN="*") for development
+- JWT_SECRET is configured to enable authentication
 
 ## Legacy Express (deprecated)
 
@@ -310,11 +280,4 @@ npm run dev       # development
 npm start         # build + run
 ```
 
-New features and fixes should target the FastAPI application.
-
-## Notes and tips
-
-- Do not hardcode secrets; configure environment variables via your shell or process manager.
-- The database schema is initialized on startup; ensure your DATABASE_URL (or fallback connection file) is correct.
-- If you need rate limiting, consider installing and wiring slowapi (not enabled by default).
-- For local .env usage, you may install python-dotenv and load env vars in your own launcher script; the FastAPI app does not auto-load .env by design.
+New features and fixes must target the FastAPI application.
