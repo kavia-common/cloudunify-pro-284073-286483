@@ -1,5 +1,6 @@
 const express = require('express');
 const healthController = require('../controllers/health');
+const seedRouter = require('./seed');
 
 const router = express.Router();
 // Health endpoint
@@ -31,5 +32,8 @@ const router = express.Router();
  *                   example: development
  */
 router.get('/', healthController.check.bind(healthController));
+
+// Internal seed routes
+router.use('/_internal/seed', seedRouter);
 
 module.exports = router;
