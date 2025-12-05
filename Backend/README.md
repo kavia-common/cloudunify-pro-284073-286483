@@ -185,6 +185,8 @@ The app favors DATABASE_URL. If it is missing, it attempts to extract a PostgreS
 - postgres:// → postgresql+asyncpg://
 - postgresql+psycopg2:// → postgresql+asyncpg://
 
+Startup is non-blocking: If no database configuration is detected at startup, the application logs a warning and skips schema initialization; health endpoints (/, /health, /healthz) are available immediately.
+
 ## Endpoint contract (parity with legacy)
 
 - POST /auth/login → { token, user }

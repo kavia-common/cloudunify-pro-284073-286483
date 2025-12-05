@@ -56,6 +56,8 @@ Environment variables:
   - DATABASE_URL (preferred; will be normalized to async driver)
   - DB_CONNECTION_FILE (optional fallback pointing to a file containing a PostgreSQL URL)
 
+Note: Startup is non-blocking. If no database configuration is detected at startup, the app logs a warning and skips schema initialization so that health endpoints are immediately available. Endpoints that require database access will fail until a database URL is provided.
+
 ## Health Endpoints
 
 - GET `/` — Returns `{ status, message, timestamp, environment }`
