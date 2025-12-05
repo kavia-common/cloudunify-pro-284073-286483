@@ -36,6 +36,9 @@ const router = express.Router();
  *                   example: development
  */
 router.get('/', healthController.check.bind(healthController));
+// Additional explicit health endpoints for infrastructure probes
+router.get('/healthz', healthController.check.bind(healthController));
+router.get('/health', healthController.check.bind(healthController));
 
 // Public auth route
 router.use('/auth', authRouter);

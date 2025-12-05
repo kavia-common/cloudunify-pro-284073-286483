@@ -10,7 +10,7 @@ import app from './app';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { ensureSchema } = require('./db');
 
-const PORT: number = parseInt(process.env.PORT || '3000', 10);
+const PORT: number = parseInt(process.env.PORT || '3001', 10);
 const HOST: string = process.env.HOST || '0.0.0.0';
 
 // Ensure DB schema (non-blocking startup)
