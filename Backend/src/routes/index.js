@@ -1,6 +1,10 @@
 const express = require('express');
 const healthController = require('../controllers/health');
 const seedRouter = require('./seed');
+const authRouter = require('./auth');
+const usersRouter = require('./users');
+const orgsRouter = require('./organizations');
+const resourcesRouter = require('./resources');
 
 const router = express.Router();
 // Health endpoint
@@ -32,6 +36,14 @@ const router = express.Router();
  *                   example: development
  */
 router.get('/', healthController.check.bind(healthController));
+
+// Public auth route
+router.use('/auth', authRouter);
+
+// Protected/public data routes
+router.use('/users', usersRouter);
+router.use('/organizations', orgsRouter);
+router.use('/resources', resourcesRouter);
 
 // Internal seed routes
 router.use('/_internal/seed', seedRouter);

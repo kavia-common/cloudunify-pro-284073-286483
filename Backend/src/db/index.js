@@ -69,7 +69,8 @@ async function ensureSchema() {
       name TEXT NOT NULL,
       role TEXT NOT NULL,
       organization_id UUID NULL REFERENCES organizations(id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      password_hash TEXT NULL
     );
   `);
 
@@ -84,6 +85,12 @@ async function ensureSchema() {
       END IF;
     END
     $$;
+  `);
+
+  // Add password_hash if missing (for existing databases)
+  await query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS password_hash TEXT NULL;
   `);
 
   // Resources table

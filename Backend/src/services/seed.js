@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const bcrypt = require('bcryptjs');
 const { query, ensureSchema } = require('../db');
 
 const ENTITIES = ['users', 'organizations', 'resources'];
@@ -162,6 +163,9 @@ function validateAndNormalize(entity, records) {
             : null,
         createdAt: toISODateOrNow(obj.createdAt),
         __hadId: hadId, // internal marker to split upsert strategy
+        // Optional password fields for seeding:
+        password: typeof obj.password === 'string' ? obj.password : undefined,
+        passwordHash: typeof obj.passwordHash === 'string' ? obj.passwordHash : undefined,
       };
 
       if (!isEmail(out.email)) {
@@ -290,10 +294,16 @@ async function upsertUsersById(records) {
   let updated = 0;
 
   for (const batch of chunkArray(records, batchSize)) {
-    const cols = ['id', 'email', 'name', 'role', 'organization_id', 'created_at'];
+    const cols = ['id', 'email', 'name', 'role', 'organization_id', 'created_at', 'password_hash'];
     const params = [];
     for (const r of batch) {
-      params.push(r.id, r.email, r.name, r.role, r.organizationId, r.createdAt);
+      const hashed =
+        typeof r.passwordHash === 'string' && r.passwordHash
+          ? r.passwordHash
+          : typeof r.password === 'string' && r.password
+            ? bcrypt.hashSync(r.password, 10)
+            : null;
+      params.push(r.id, r.email, r.name, r.role, r.organizationId, r.createdAt, hashed);
     }
     const placeholders = buildValuesPlaceholders(batch.length, cols.length);
     const sql = `
@@ -303,7 +313,8 @@ async function upsertUsersById(records) {
       SET email = EXCLUDED.email,
           name = EXCLUDED.name,
           role = EXCLUDED.role,
-          organization_id = EXCLUDED.organization_id
+          organization_id = EXCLUDED.organization_id,
+          password_hash = COALESCE(EXCLUDED.password_hash, users.password_hash)
       RETURNING (xmax = 0) AS inserted;
     `;
     const result = await query(sql, params);
@@ -324,7 +335,7 @@ async function upsertUsersByEmail(records) {
   let updated = 0;
 
   for (const batch of chunkArray(records, batchSize)) {
-    const cols = ['id', 'email', 'name', 'role', 'organization_id', 'created_at'];
+    const cols = ['id', 'email', 'name', 'role', 'organization_id', 'created_at', 'password_hash'];
     const params = [];
     const withIds = batch.map((r) => ({
       ...r,
@@ -332,7 +343,13 @@ async function upsertUsersByEmail(records) {
     }));
 
     for (const r of withIds) {
-      params.push(r.id, r.email, r.name, r.role, r.organizationId, r.createdAt);
+      const hashed =
+        typeof r.passwordHash === 'string' && r.passwordHash
+          ? r.passwordHash
+          : typeof r.password === 'string' && r.password
+            ? bcrypt.hashSync(r.password, 10)
+            : null;
+      params.push(r.id, r.email, r.name, r.role, r.organizationId, r.createdAt, hashed);
     }
     const placeholders = buildValuesPlaceholders(withIds.length, cols.length);
     const sql = `
@@ -341,7 +358,8 @@ async function upsertUsersByEmail(records) {
       ON CONFLICT (email) DO UPDATE
       SET name = EXCLUDED.name,
           role = EXCLUDED.role,
-          organization_id = EXCLUDED.organization_id
+          organization_id = EXCLUDED.organization_id,
+          password_hash = COALESCE(EXCLUDED.password_hash, users.password_hash)
       RETURNING (xmax = 0) AS inserted;
     `;
     const result = await query(sql, params);
