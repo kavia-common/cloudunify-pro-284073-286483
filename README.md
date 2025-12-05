@@ -26,9 +26,21 @@ Security:
 
 Environment variables (see `.env.example`):
 ```
-PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE, PGSSL, PGPOOL_MAX
+# Server
+PORT, HOST, LOG_LEVEL
+
+# CORS
+CORS_ORIGIN
+
+# JWT
+JWT_SECRET, JWT_EXPIRES_IN, JWT_ISSUER, JWT_AUDIENCE
+
+# Database (either DATABASE_URL or individual PG* settings)
+DATABASE_URL, PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE, PGSSL, PGPOOL_MAX
+
+# Seeding
 SEED_ADMIN_TOKEN
-PROJDEFN_DIR (optional override path to .projdefn)
+PROJDEFN_DIR
 ```
 
 Example: seed from .projdefn automatically (local)
@@ -62,4 +74,5 @@ curl -X POST https://api.example.com/_internal/seed/all \
 
 OpenAPI
 - Visit /docs to view the API documentation with the Seed endpoints included.
+- OpenAPI JSON is also exposed at /openapi.json with a dynamic server URL (useful for tooling/CI).
 - You can generate a static openapi.json by running: `npm run generate:openapi` inside Backend.

@@ -11,7 +11,7 @@ const jwt = require('jsonwebtoken');
 function signToken(user) {
   /**
    * Signs a JWT for the given user.
-   * Payload includes standard claims: sub, email, role.
+   * Payload includes standard claims: sub, email, role, organizationId.
    */
   const secret = process.env.JWT_SECRET;
   if (!secret) {
@@ -25,6 +25,7 @@ function signToken(user) {
     sub: user.id,
     email: user.email,
     role: user.role,
+    organizationId: user.organizationId || null,
   };
   return jwt.sign(payload, secret, { expiresIn, issuer, audience });
 }

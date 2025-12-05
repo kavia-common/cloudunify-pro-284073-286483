@@ -4,11 +4,16 @@ const routes = require('./routes');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('../swagger');
 
-// Initialize express app
+/* Initialize express app with env-driven CORS */
+function parseCorsOrigins() {
+  const raw = process.env.CORS_ORIGIN || '*';
+  if (raw.trim() === '*') return '*';
+  return raw.split(',').map((s) => s.trim()).filter(Boolean);
+}
 const app = express();
 
 app.use(cors({
-  origin: '*',
+  origin: parseCorsOrigins(),
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -38,18 +43,44 @@ app.use('/docs', swaggerUi.serve, (req, res, next) => {
   swaggerUi.setup(dynamicSpec)(req, res, next);
 });
 
+app.get('/openapi.json', (req, res) => {
+  const host = req.get('host') || '';
+  let protocol = req.protocol;
+
+  const actualPort = req.socket.localPort;
+  const hasPort = host.includes(':');
+
+  const needsPort =
+    !hasPort &&
+    ((protocol === 'http' && actualPort !== 80) ||
+     (protocol === 'https' && actualPort !== 443));
+  const fullHost = needsPort ? `${host}:${actualPort}` : host;
+  protocol = req.secure ? 'https' : protocol;
+
+  const dynamicSpec = {
+    ...swaggerSpec,
+    servers: [
+      {
+        url: `${protocol}://${fullHost}`,
+      },
+    ],
+  };
+  res.json(dynamicSpec);
+});
+
 // Parse JSON request body
 app.use(express.json());
 
 // Mount routes
 app.use('/', routes);
 
-// Error handling middleware
+/* Error handling middleware */
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error(err && err.stack ? err.stack : err);
   res.status(500).json({
-    status: 'error',
+    error: 'internal_error',
     message: 'Internal Server Error',
+    code: 500,
   });
 });
 

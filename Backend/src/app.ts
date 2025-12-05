@@ -110,8 +110,9 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   // eslint-disable-next-line no-console
   console.error(err && (err as any).stack ? (err as any).stack : err);
   res.status(500).json({
-    status: 'error',
+    error: 'internal_error',
     message: 'Internal Server Error',
+    code: 500,
   });
 });
 
