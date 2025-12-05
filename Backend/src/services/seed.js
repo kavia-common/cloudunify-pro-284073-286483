@@ -503,9 +503,33 @@ async function seedAll(payloadMap) {
   };
 }
 
+/**
+ * Return counts for seeded entities for verification.
+ */
+// PUBLIC_INTERFACE
+async function getSeedCounts() {
+  await ensureSchema();
+  const [orgs, users, resources] = await Promise.all([
+    query('SELECT COUNT(*)::int AS c FROM organizations', []),
+    query('SELECT COUNT(*)::int AS c FROM users', []),
+    query('SELECT COUNT(*)::int AS c FROM resources', []),
+  ]);
+
+  const counts = {
+    organizations: (orgs.rows[0] && orgs.rows[0].c) || 0,
+    users: (users.rows[0] && users.rows[0].c) || 0,
+    resources: (resources.rows[0] && resources.rows[0].c) || 0,
+  };
+  return {
+    ...counts,
+    total: counts.organizations + counts.users + counts.resources,
+  };
+}
+
 module.exports = {
   ENTITIES,
   loadEntityFromProjdefn,
   seedEntity,
   seedAll,
+  getSeedCounts,
 };

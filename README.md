@@ -100,6 +100,16 @@ This backend exposes internal endpoints to load and upsert mock data from `.proj
     - You can provide either `password` (plaintext) OR `passwordHash` (bcrypt hash).
     - If `password` is provided, it is hashed server-side using bcryptjs with a secure salt round.
     - If both are omitted, the user will be created/updated without a password (login will fail for that user).
+
+- POST `/_internal/seed` (no body required)
+  - Convenience alias for `/_internal/seed/all`
+  - With no body, the server auto-discovers a `.projdefn` directory (or uses env `PROJDEFN_DIR`) and loads:
+    - `*organizations*.json`
+    - `*users*.json`
+    - `*resources*.json`
+  - Seeds in order: organizations -> users -> resources
+  - Optional body `{ organizations?: [], users?: [], resources?: [] }` overrides discovery
+
 - POST `/_internal/seed/all`
   - Seeds in order: organizations -> users -> resources
   - Optional request body:
@@ -112,18 +122,51 @@ This backend exposes internal endpoints to load and upsert mock data from `.proj
     ```
   - Returns aggregated per-entity stats and totals.
 
+- GET `/_internal/seed/verify`
+  - Returns simple counts to confirm seeding success:
+    ```
+    {
+      "ok": true,
+      "counts": {
+        "organizations": 3,
+        "users": 10,
+        "resources": 120,
+        "total": 133
+      }
+    }
+    ```
+
 Security:
 - In non-production (`NODE_ENV !== 'production'`), endpoints are open to ease local development.
 - In production, you must include the header `X-Seed-Token` matching env `SEED_ADMIN_TOKEN`.
 
 Examples (local):
+- Seed a single entity from `.projdefn` (no body)
 ```
 curl -X POST http://localhost:3001/_internal/seed/organizations -H "Content-Type: application/json"
-curl -X POST http://localhost:3001/_internal/seed/users -H "Content-Type: application/json"
-curl -X POST http://localhost:3001/_internal/seed/resources -H "Content-Type: application/json"
 ```
 
-Example with explicit user payload (password hashing supported):
+- Seed all from `.projdefn` using the convenience route (no body)
+```
+# Optionally point to a custom .projdefn directory
+export PROJDEFN_DIR="$(pwd)/.projdefn"
+
+curl -X POST http://localhost:3001/_internal/seed
+```
+
+- Seed all with explicit payload (overrides .projdefn discovery)
+```
+curl -X POST http://localhost:3001/_internal/seed/all \
+  -H "Content-Type: application/json" \
+  -d '{"organizations":[{"id":"3f57a1e8-1e9a-4a08-84be-53b4d38f2e00","name":"Acme Corp"}]}'
+```
+
+- Verify counts after seeding
+```
+curl -s http://localhost:3001/_internal/seed/verify | jq .
+```
+
+- Example with explicit user payload (password hashing supported)
 ```
 curl -X POST http://localhost:3001/_internal/seed/users \
   -H "Content-Type: application/json" \
@@ -133,10 +176,12 @@ curl -X POST http://localhost:3001/_internal/seed/users \
   ]'
 ```
 
-Production example (requires token):
+Production examples (require token):
 ```
-curl -X POST https://api.example.com/_internal/seed/all \
-  -H "Content-Type: application/json" \
+curl -X POST https://api.example.com/_internal/seed \
+  -H "X-Seed-Token: ${SEED_ADMIN_TOKEN}"
+
+curl -s https://api.example.com/_internal/seed/verify \
   -H "X-Seed-Token: ${SEED_ADMIN_TOKEN}"
 ```
 
