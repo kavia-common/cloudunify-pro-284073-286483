@@ -1,4 +1,9 @@
 class HealthService {
+    /**
+     * PUBLIC_INTERFACE
+     * Returns a simple health object with status, message, current timestamp,
+     * and the current NODE_ENV value (defaults to development).
+     */
     getStatus() {
       return {
         status: 'ok',
