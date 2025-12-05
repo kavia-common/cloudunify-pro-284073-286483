@@ -167,3 +167,34 @@ Note: The build is configured to compile TypeScript sources and copy JavaScript 
     "environment": "development"
   }
   ```
+
+## Database configuration alignment (DATABASE_URL)
+
+The Backend reads the database connection string from the environment variable `DATABASE_URL`. This must match the DSN defined by the Database container in `Database/db_connection.txt`.
+
+- If `Database/db_connection.txt` contains a line like:
+  ```
+  psql postgresql://appuser:dbuser123@localhost:5000/myapp
+  ```
+  set Backend `DATABASE_URL` to the DSN part (everything after `psql `):
+  ```
+  DATABASE_URL=postgresql://appuser:dbuser123@localhost:5000/myapp
+  ```
+
+- On startup, the server:
+  - Logs a sanitized form of the connection source (username/password hidden)
+  - Applies a lightweight schema setup via `ensureSchema()`:
+    - Creates tables if missing: `organizations`, `users` (with `password_hash`), `resources`
+    - Ensures helpful indexes exist:
+      - Unique index on `users(email)` (if not already created by constraint)
+      - Index on `users(organization_id)` for faster org-scoped queries
+      - Indexes on `resources(provider)` and `resources(status)`
+
+Optional DB environment variables:
+- `PGSSL` (default `false`) – enable SSL (`rejectUnauthorized: false`)
+- `PGPOOL_MAX` (default `10`) – connection pool size
+- `PGAPPNAME` (default `cloudunify-pro-backend`) – application_name for DB sessions
+- `PGCONNECT_TIMEOUT_MS` (default `5000`) – connection timeout
+- `PGIDLE_TIMEOUT_MS` (default `30000`) – idle timeout
+
+An example `.env.example` is provided at `Backend/.env.example`. Copy it to `.env` and adjust as needed. Do not commit your `.env`.
