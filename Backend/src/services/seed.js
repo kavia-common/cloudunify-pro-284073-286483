@@ -185,6 +185,20 @@ function validateAndNormalize(entity, records) {
     });
   } else if (entity === 'resources') {
     const allowedProviders = ['AWS', 'Azure', 'GCP'];
+
+    function normalizeResourceStatus(s) {
+      if (!s) return null;
+      const v = String(s).toLowerCase().trim();
+      // Accepted canonical statuses per DB constraint in some environments
+      if (v === 'active' || v === 'inactive' || v === 'deleted') return v;
+      // Map common cloud-native statuses to canonical values
+      if (v === 'running' || v === 'started' || v === 'start') return 'active';
+      if (v === 'stopped' || v === 'stopping' || v === 'stop') return 'inactive';
+      if (v === 'terminated' || v === 'terminating' || v === 'deleting' || v === 'removed') return 'deleted';
+      // Fallback: preserve original string (may pass if no DB constraint is present)
+      return s;
+    }
+
     records.forEach((rec, idx) => {
       const obj = rec || {};
       const id = obj.id && typeof obj.id === 'string' && isUUIDv4(obj.id) ? obj.id : randomUUID();
@@ -192,7 +206,7 @@ function validateAndNormalize(entity, records) {
       const providerOk = provider && allowedProviders.includes(provider);
       const tagsObj = obj.tags && typeof obj.tags === 'object' && !Array.isArray(obj.tags) ? obj.tags : {};
       const costNum = Number(obj.cost);
-      const statusStr = typeof obj.status === 'string' ? obj.status : null;
+      const statusStr = normalizeResourceStatus(typeof obj.status === 'string' ? obj.status : null);
 
       const out = {
         id,
