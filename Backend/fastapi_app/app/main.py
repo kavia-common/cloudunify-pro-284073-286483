@@ -18,6 +18,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.v1.endpoints.health import router as health_router
+from .api.v1.endpoints.auth import router as auth_router
+from .api.v1.endpoints.users import router as users_router
+from .api.v1.endpoints.organizations import router as orgs_router
+from .api.v1.endpoints.resources import router as resources_router
+from .api.v1.endpoints.seed import router as seed_router
 from .core.config import Settings
 from .core.middleware import PreviewEmbeddingHeadersMiddleware
 
@@ -45,6 +50,11 @@ def create_app() -> FastAPI:
 
     openapi_tags = [
         {"name": "Health", "description": "Health and status endpoints"},
+        {"name": "Auth", "description": "Authentication endpoints"},
+        {"name": "Users", "description": "User endpoints"},
+        {"name": "Organizations", "description": "Organization endpoints"},
+        {"name": "Resources", "description": "Multi-cloud resources"},
+        {"name": "Seed", "description": "Internal endpoints for loading mock data into the database"},
     ]
 
     app = FastAPI(
@@ -72,8 +82,13 @@ def create_app() -> FastAPI:
         frame_ancestors=settings.preview_frame_ancestors,
     )
 
-    # Routers
+    # Routers (preserve public paths with no global prefix)
     app.include_router(health_router, prefix="")
+    app.include_router(auth_router, prefix="")
+    app.include_router(users_router, prefix="")
+    app.include_router(orgs_router, prefix="")
+    app.include_router(resources_router, prefix="")
+    app.include_router(seed_router, prefix="")
 
     # Startup hook to ensure schema is initialized
     from .db.init_db import ensure_schema
